@@ -1,10 +1,9 @@
-import streamlit as st
-from dotenv import load_dotenv
 import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_neo4j import Neo4jGraph
+import streamlit as st
 
-load_dotenv()
+
 
 st.set_page_config(
     layout="wide",
