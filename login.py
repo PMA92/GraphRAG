@@ -1,5 +1,4 @@
 import streamlit as st
-from neo4j import GraphDatabase
 from dotenv import load_dotenv
 import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
