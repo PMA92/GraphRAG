@@ -5,8 +5,6 @@ import os
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_neo4j import Neo4jGraph
 
-
-
 load_dotenv()
 
 st.set_page_config(
@@ -16,8 +14,6 @@ st.set_page_config(
 
 left, right, mid, rightmid, right= st.columns([1, 2, 3, 4, 5])
 
-pg = st.navigation([st.Page("Log In.py"), st.Page("Main Menu.py")])
-pg.run()
 
 with rightmid:
     st.title("GraphRAG")
