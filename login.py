@@ -16,7 +16,7 @@ st.set_page_config(
 
 left, right, mid, rightmid, right= st.columns([1, 2, 3, 4, 5])
 
-pg = st.navigation([st.Page("login.py"), st.Page("mainmenu.py")])
+pg = st.navigation([st.Page("Log In.py"), st.Page("Main Menu.py")])
 pg.run()
 
 with rightmid:
