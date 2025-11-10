@@ -5,9 +5,18 @@ import tempfile
 from openai import OpenAI
 from neo4j import GraphDatabase
 
-from openai import OpenAI, Client
+from openai import OpenAI
 from neo4j import GraphDatabase
+from pypdf import PdfReader
 
+
+def load_pages_from_pdf(doc):
+    loader = PdfReader(doc)
+    pages = loader.pages
+    content = ""
+    for page in pages:
+        content.append(page.extract_text())
+    return content
 
 def documents_to_graph_elements(docs):
     prompt = f"""
@@ -111,7 +120,7 @@ elif st.session_state["screen"] == "menu":
                 tmp_file.write(uploaded_file.read())
                 tmp_file_path = tmp_file.name
 
-                loader = PyPDFLoader(tmp_file_path)
+                loader = PdfReader(tmp_file_path)
                 pages = loader.load_and_split()
                 
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=40)
