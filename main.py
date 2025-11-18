@@ -6,9 +6,11 @@ from openai import OpenAI
 from neo4j import GraphDatabase
 
 from openai import OpenAI
-from neo4j import GraphDatabase
+from neo4j import GraphDatabase, vector
 from pypdf import PdfReader
-
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
+from langchain_openai import OpenAIEmbeddings
 
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
@@ -85,7 +87,7 @@ if st.session_state["screen"] == "login":
         st.session_state["llm"] = llm
     else:
         embeddings = OpenAIEmbeddings()
-        llm = OpenAI(model_name="gpt-4o")
+        llm = OpenAI()
     if password and url and user:
         st.session_state["url"] = url 
         st.session_state["password"] = password 
@@ -120,34 +122,26 @@ elif st.session_state["screen"] == "menu":
                 tmp_file.write(uploaded_file.read())
                 tmp_file_path = tmp_file.name
 
-                loader = PdfReader(tmp_file_path)
-                pages = loader.load_and_split()
+                pages = PdfReader(tmp_file_path)
                 
                 text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=40)
                 docs = text_splitter.split_documents(pages)
 
                 lc_docs = []
                 for doc in docs:
-                    lc_docs.append(Document(page_content=doc.page_content.replace("\n", ""), 
-                    metadata={'source': uploaded_file.name}))
+                    lc_docs.append(doc.page_content.replace("\n", "")), 
+                    metadata={'source': uploaded_file.name}
 
                 # Clear the graph database
                 cypher = """
                   MATCH (n)
                   DETACH DELETE n;
                 """
-                graph.query(cypher)
-                transformer = LLMGraphTransformer(
-                    llm=llm,
-                    node_properties=True,
-                    relationship_properties=True
-                )
-
-                graph_documents = transformer.convert_to_graph_documents(lc_docs)
+                graph_documents = documents_to_graph_elements(lc_docs)
 
                 graph.add_graph_documents(graph_documents)
 
-                index = Neo4jVector(
+                index = vector(
                     embedding=st.session_state["embeddings"],
                     username=st.session_state["user"],
                     password=st.session_state["password"],
@@ -164,7 +158,13 @@ elif st.session_state["screen"] == "menu":
 
                 schema = graph.get_schema()
 
-                template="""
+                
+
+        st.subheader("Ask a Question")
+        with st.form(key='question_form'):
+            question = st.text_input("Enter your question:")
+
+            template=f"""
                 Task: Generate a Cypher statement to query the graph database.
 
                 Instructions:
@@ -180,29 +180,24 @@ elif st.session_state["screen"] == "menu":
 
                 Question: {question}""" 
 
-                question_prompt = ChatPromptTemplate(
-                    template=template, 
-                    input_variables=["schema", "question"] 
-                )
+                
 
-                qa = GraphCypherQAChain.from_llm(
-                    llm=llm,
-                    graph=graph,
-                    cypher_prompt=question_prompt,
-                    verbose=True,
-                    allow_dangerous_requests=True
-                )
-                st.session_state['qa'] = qa
+            qa = GraphCypherQAChain.from_llm(
+                llm=llm,
+                graph=graph,
+                cypher_prompt=template,
+                verbose=True,
+                allow_dangerous_requests=True
+            )
+            st.session_state['qa'] = qa
 
-        if 'qa' in st.session_state:
-            st.subheader("Ask a Question")
-            with st.form(key='question_form'):
-                question = st.text_input("Enter your question:")
-                submit_button = st.form_submit_button(label='Submit')
-            if submit_button and question:
-                with st.spinner("Generating answer..."):
-                    res = st.session_state['qa'].invoke({"query": question})
-                    st.write("\n**Answer:**\n" + res['result'])
+
+
+            submit_button = st.form_submit_button(label='Submit')
+        if submit_button and question:
+            with st.spinner("Generating answer..."):
+                res = st.session_state['qa'].invoke({"query": question})
+                st.write("\n**Answer:**\n" + res['result'])
 
 
 
