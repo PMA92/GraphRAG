@@ -15,12 +15,14 @@ from langchain_openai import OpenAIEmbeddings
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
     pages = loader.pages
-    content = ""
+    content = []
     for page in pages:
-        content.append(page.extract_text())
-    return content
+        text = page.extract_text()
+        if text:
+            content.append(text)
+    return "\n".join(content)
 
-def documents_to_graph_elements(docs):
+def documents_to_graph_elements(docs, client):
     prompt = f"""
     Extract knowledge graph triples for each document in the list of docouemnts.
 
@@ -82,7 +84,7 @@ if st.session_state["screen"] == "login":
         st.session_state['OPENAI_API_KEY'] = apikey
         st.success("OpenAI API Key set successfully.")
         embeddings = OpenAIEmbeddings()
-        llm = OpenAI(model_name="gpt-4o")
+        llm = OpenAI()
         st.session_state["embeddings"] = embeddings
         st.session_state["llm"] = llm
     else:
@@ -93,10 +95,10 @@ if st.session_state["screen"] == "login":
         st.session_state["password"] = password 
         st.session_state["user"] = user 
         try:
-            graph = GraphDatabase(
-            url = url,
-            password = password,
-            username = user
+            auth = (password, user)
+            graph = GraphDatabase.driver(
+            uri = url,
+            auth=auth
         )
 
             if graph and llm:
@@ -122,22 +124,14 @@ elif st.session_state["screen"] == "menu":
                 tmp_file.write(uploaded_file.read())
                 tmp_file_path = tmp_file.name
 
-                pages = PdfReader(tmp_file_path)
-                
-                text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=40)
-                docs = text_splitter.split_documents(pages)
-
-                lc_docs = []
-                for doc in docs:
-                    lc_docs.append(doc.page_content.replace("\n", "")), 
-                    metadata={'source': uploaded_file.name}
+                lc_docs = load_pages_from_pdf(tmp_file_path)
 
                 # Clear the graph database
                 cypher = """
                   MATCH (n)
                   DETACH DELETE n;
                 """
-                graph_documents = documents_to_graph_elements(lc_docs)
+                graph_documents = documents_to_graph_elements(lc_docs, llm)
 
                 graph.add_graph_documents(graph_documents)
 
