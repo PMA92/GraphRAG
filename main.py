@@ -4,13 +4,13 @@ import streamlit as st
 import tempfile
 from openai import OpenAI
 from neo4j import GraphDatabase
-
+import json
 from openai import OpenAI
 from neo4j import GraphDatabase, vector
 from pypdf import PdfReader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_openai import OpenAIEmbeddings
+import re
 
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
@@ -36,16 +36,44 @@ def documents_to_graph_elements(docs, client):
     """
     
     client = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[{
             "role": "user",
             "content": prompt
-        }
-        ]
+            }],
     )
-    return client.choices[0].message.content
+    
+    res = client.choices[0].message.content
+    res = re.sub(r"```json|```", "", res).strip()
+    st.write(res)
+    print(res)
+    info = json.loads(res)
+    return info
 
 
+        
+
+def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.driver):
+    for item in relation_input:
+        st.write(item)
+        source = item["Source"]
+        relationship = item["Relationship"]
+        target = item["Target"]
+
+
+        graph.verify_connectivity()
+        graph.execute_query(
+            """
+            MERGE (a:Entity {name: $source})
+            MERGE (b:Entity {name: $target})
+            MERGE (a)-[r:RELATIONSHIP {type: $relationship}]->(b)
+            """,
+            source=source,
+            target=target,
+            relationship=relationship,
+            database = "GraphRAG"
+        )
+    
 
 
 load_dotenv()
@@ -95,7 +123,7 @@ if st.session_state["screen"] == "login":
         st.session_state["password"] = password 
         st.session_state["user"] = user 
         try:
-            auth = (password, user)
+            auth = (user, password)
             graph = GraphDatabase.driver(
             uri = url,
             auth=auth
@@ -111,10 +139,15 @@ if st.session_state["screen"] == "login":
             st.error(f"Invalid Neo4J Credentials, check again under error message: {e}")
 
 
-elif st.session_state["screen"] == "menu":
+if st.session_state["screen"] == "menu":
     st.title("GraphRAG")
     st.write("Here you will upload PDFs and make queries.")
-    graph = st.session_state["graph"]
+    auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASS"))
+    url = os.getenv("NEO4J_URL")
+    graph = GraphDatabase.driver(
+        uri = url,
+        auth=auth
+    )
     llm = st.session_state["llm"]
     # Example content
     uploaded_file = st.file_uploader("Upload pdf to knowledge base here", type="pdf")
@@ -133,7 +166,7 @@ elif st.session_state["screen"] == "menu":
                 """
                 graph_documents = documents_to_graph_elements(lc_docs, llm)
 
-                graph.add_graph_documents(graph_documents)
+                build_graph_nodes_and_relationships(graph_documents, graph)                
 
                 index = vector(
                     embedding=st.session_state["embeddings"],
