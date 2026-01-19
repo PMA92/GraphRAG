@@ -6,7 +6,12 @@ from openai import OpenAI
 from neo4j import GraphDatabase
 import json
 from openai import OpenAI
-from neo4j import GraphDatabase, vector
+
+import neo4j_graphrag.schema 
+from neo4j_graphrag.experimental.components.embedder import TextChunkEmbedder
+from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings
+
+from neo4j import GraphDatabase
 from pypdf import PdfReader
 from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_openai import OpenAIEmbeddings
@@ -45,8 +50,6 @@ def documents_to_graph_elements(docs, client):
     
     res = client.choices[0].message.content
     res = re.sub(r"```json|```", "", res).strip()
-    st.write(res)
-    print(res)
     info = json.loads(res)
     return info
 
@@ -55,7 +58,6 @@ def documents_to_graph_elements(docs, client):
 
 def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.driver):
     for item in relation_input:
-        st.write(item)
         source = item["Source"]
         relationship = item["Relationship"]
         target = item["Target"]
@@ -168,7 +170,7 @@ if st.session_state["screen"] == "menu":
 
                 build_graph_nodes_and_relationships(graph_documents, graph)                
 
-                index = vector(
+                """index = vector(
                     embedding=st.session_state["embeddings"],
                     username=st.session_state["user"],
                     password=st.session_state["password"],
@@ -179,11 +181,12 @@ if st.session_state["screen"] == "menu":
                     index_name="vector_index", 
                     keyword_index_name="entity_index", 
                     search_type="hybrid" 
-                )
+                )"""
 
                 st.success("Uploaded file")
 
-                schema = graph.get_schema()
+                schema = get_structured_schema(driver=graph, sample=1000)
+
 
                 
 
