@@ -184,12 +184,10 @@ if st.session_state["screen"] == "menu":
                 )"""
 
                 st.success("Uploaded file")
-
-                schema = get_structured_schema(driver=graph, sample=1000)
+                schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
 
 
                 
-
         st.subheader("Ask a Question")
         with st.form(key='question_form'):
             question = st.text_input("Enter your question:")
@@ -212,18 +210,17 @@ if st.session_state["screen"] == "menu":
 
                 
 
-            qa = GraphCypherQAChain.from_llm(
+            """qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 graph=graph,
                 cypher_prompt=template,
                 verbose=True,
                 allow_dangerous_requests=True
             )
-            st.session_state['qa'] = qa
+            st.session_state['qa'] = qa"""
+            submit_button = st.form_submit_button(label='question_form')
 
 
-
-            submit_button = st.form_submit_button(label='Submit')
         if submit_button and question:
             with st.spinner("Generating answer..."):
                 res = st.session_state['qa'].invoke({"query": question})
