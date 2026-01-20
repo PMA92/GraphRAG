@@ -189,42 +189,42 @@ if st.session_state["screen"] == "menu":
 
                 
         st.subheader("Ask a Question")
+
         with st.form(key='question_form'):
             question = st.text_input("Enter your question:")
+            submit_button = st.form_submit_button(label='Submit')
 
             template=f"""
                 Task: Generate a Cypher statement to query the graph database.
-
                 Instructions:
                 Use only relationship types and properties provided in schema.
                 Do not use other relationship types or properties that are not provided.
-
                 schema:
                 {schema}
-
                 Note: Do not include explanations or apologies in your answers.
                 Do not answer questions that ask anything other than creating Cypher statements.
                 Do not include any text other than generated Cypher statements.
-
                 Question: {question}""" 
 
-                
 
-            """qa = GraphCypherQAChain.from_llm(
-                llm=llm,
-                graph=graph,
-                cypher_prompt=template,
-                verbose=True,
-                allow_dangerous_requests=True
+            cypher = llm.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": template},
+                ],
             )
-            st.session_state['qa'] = qa"""
-            submit_button = st.form_submit_button(label='question_form')
+            st.session_state['cypher'] = cypher.choices[0].message.content
 
+            if submit_button and question:
+                with st.spinner("Generating answer..."):
+                    with graph.session() as session:
+                        result = session.run(st.session_state['cypher'])
+                        records = result.data()
+                        records_str = json.dumps(records, indent=2)
+                        print("Generating answer...")
+                    #res = st.session_state['qa'].invoke({"query": question})
+                        st.write("\n**Answer:**\n" + records_str)
 
-        if submit_button and question:
-            with st.spinner("Generating answer..."):
-                res = st.session_state['qa'].invoke({"query": question})
-                st.write("\n**Answer:**\n" + res['result'])
 
 
 
