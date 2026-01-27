@@ -21,6 +21,17 @@ from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_openai import OpenAIEmbeddings
 import re
 
+def get_node_properties(driver):
+    query = """
+    CALL db.schema.nodeTypeProperties()
+    YIELD nodeType, propertyName
+    RETURN nodeType AS label, collect(DISTINCT propertyName) AS properties
+    """
+    with driver.session() as session:
+        result = session.run(query)
+        return {record["label"]: record["properties"] for record in result}
+
+
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
     pages = loader.pages
@@ -218,6 +229,7 @@ if st.session_state["screen"] == "menu":
                 Do not include any text other than generated Cypher statements.
                 Question: {question}""")
 
+            node_prop = get_node_properties(driver=graph)
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
@@ -231,7 +243,7 @@ if st.session_state["screen"] == "menu":
             if submit_button and question:
                 with st.spinner("Generating answer..."):
                     with graph.session() as session:
-                        res = st.session_state['qa'].invoke({"query": question})
+                        res = st.session_state['qa'].invoke({"query": question, "node_props": node_prop})
                         st.write("\n**Answer:**\n" + res['result'])
 
 
