@@ -8,6 +8,7 @@ import json
 from langchain_openai import ChatOpenAI
 from langchain_community.vectorstores.neo4j_vector import Neo4jVector
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_community.graphs import Neo4jGraph
 
 
 import neo4j_graphrag.schema 
@@ -128,6 +129,12 @@ if st.session_state["screen"] == "login":
             uri = url,
             auth=auth
         )
+            qaGraph = Neo4jGraph(
+                url=url,
+                username=user,
+                password=password,
+                database="neo4j"     
+            )
 
             if graph and llm:
                 st.session_state["llm"] = llm
@@ -147,6 +154,12 @@ if st.session_state["screen"] == "menu":
     graph = GraphDatabase.driver(
         uri = url,
         auth=auth
+    )
+    qaGraph = Neo4jGraph(
+                url=url,
+                username=st.session_state["user"],
+                password=st.session_state["password"],
+                database="neo4j"     
     )
     llm = st.session_state["llm"]
     # Example content
@@ -208,8 +221,9 @@ if st.session_state["screen"] == "menu":
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
-                graph=graph,
-                verbose=True
+                graph=qaGraph,
+                verbose=True,
+                allow_dangerous_requests=True
             )
             
             st.session_state['qa'] = qa
