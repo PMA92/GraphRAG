@@ -2,10 +2,13 @@ from dotenv import load_dotenv
 import os
 import streamlit as st
 import tempfile
-from openai import OpenAI
 from neo4j import GraphDatabase
 import json
-from openai import OpenAI
+
+from langchain_openai import ChatOpenAI
+from langchain_community.vectorstores.neo4j_vector import Neo4jVector
+from langchain_core.prompts import ChatPromptTemplate
+
 
 import neo4j_graphrag.schema 
 from neo4j_graphrag.experimental.components.embedder import TextChunkEmbedder
@@ -40,15 +43,10 @@ def documents_to_graph_elements(docs, client):
     {docs}
     """
     
-    client = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{
-            "role": "user",
-            "content": prompt
-            }],
-    )
+    response = client.invoke(prompt)
+        
     
-    res = client.choices[0].message.content
+    res = response.content
     res = re.sub(r"```json|```", "", res).strip()
     info = json.loads(res)
     return info
@@ -114,12 +112,12 @@ if st.session_state["screen"] == "login":
         st.session_state['OPENAI_API_KEY'] = apikey
         st.success("OpenAI API Key set successfully.")
         embeddings = OpenAIEmbeddings()
-        llm = OpenAI()
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         st.session_state["embeddings"] = embeddings
         st.session_state["llm"] = llm
     else:
         embeddings = OpenAIEmbeddings()
-        llm = OpenAI()
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     if password and url and user:
         st.session_state["url"] = url 
         st.session_state["password"] = password 
@@ -170,18 +168,19 @@ if st.session_state["screen"] == "menu":
 
                 build_graph_nodes_and_relationships(graph_documents, graph)                
 
-                """index = vector(
+                index = Neo4jVector.from_existing_graph(
                     embedding=st.session_state["embeddings"],
                     username=st.session_state["user"],
                     password=st.session_state["password"],
+                    node_label="Entity",
                     url=st.session_state["url"],
                     database="neo4j",
                     text_node_properties=["id", "text"], 
                     embedding_node_property="embedding", 
-                    index_name="vector_index", 
+                    index_name="vector", 
                     keyword_index_name="entity_index", 
                     search_type="hybrid" 
-                )"""
+                )
 
                 st.success("Uploaded file")
                 schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
@@ -194,7 +193,7 @@ if st.session_state["screen"] == "menu":
             question = st.text_input("Enter your question:")
             submit_button = st.form_submit_button(label='Submit')
 
-            template=f"""
+            template=ChatPromptTemplate.from_template(template=f"""
                 Task: Generate a Cypher statement to query the graph database.
                 Instructions:
                 Use only relationship types and properties provided in schema.
@@ -204,26 +203,22 @@ if st.session_state["screen"] == "menu":
                 Note: Do not include explanations or apologies in your answers.
                 Do not answer questions that ask anything other than creating Cypher statements.
                 Do not include any text other than generated Cypher statements.
-                Question: {question}""" 
+                Question: {question}""")
 
-
-            cypher = llm.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": template},
-                ],
+            qa = GraphCypherQAChain.from_llm(
+                llm=llm,
+                cypher_prompt=template,
+                graph=graph,
+                verbose=True
             )
-            st.session_state['cypher'] = cypher.choices[0].message.content
+            
+            st.session_state['qa'] = qa
 
             if submit_button and question:
                 with st.spinner("Generating answer..."):
                     with graph.session() as session:
-                        result = session.run(st.session_state['cypher'])
-                        records = result.data()
-                        records_str = json.dumps(records, indent=2)
-                        print("Generating answer...")
-                    #res = st.session_state['qa'].invoke({"query": question})
-                        st.write("\n**Answer:**\n" + records_str)
+                        res = st.session_state['qa'].invoke({"query": question})
+                        st.write("\n**Answer:**\n" + res['result'])
 
 
 
