@@ -194,9 +194,9 @@ if st.session_state["screen"] == "menu":
                     text_node_properties=["id", "text"], 
                     embedding_node_property="embedding", 
                     index_name="vector", 
-                    keyword_index_name="entity_index", 
-                    search_type="hybrid" 
+                    search_type="vector" 
                 )
+
 
                 st.success("Uploaded file")
                 schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
@@ -220,6 +220,9 @@ if st.session_state["screen"] == "menu":
                 Do not answer questions that ask anything other than creating Cypher statements.
                 Do not include any text other than generated Cypher statements.
                 Question: {question}""")
+
+            print(index.similarity_search(question))
+
 
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
