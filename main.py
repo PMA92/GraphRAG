@@ -51,6 +51,7 @@ def documents_to_graph_elements(docs, client):
     
     res = response.content
     res = re.sub(r"```json|```", "", res).strip()
+    print(res)
     info = json.loads(res)
     return info
 
@@ -74,7 +75,7 @@ def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.dri
             source=source,
             target=target,
             relationship=relationship,
-            database = "GraphRAG"
+            database = "neo4j"
         )
     
 
@@ -115,12 +116,12 @@ if st.session_state["screen"] == "login":
         st.session_state['OPENAI_API_KEY'] = apikey
         st.success("OpenAI API Key set successfully.")
         embeddings = OpenAIEmbeddings()
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
         st.session_state["embeddings"] = embeddings
         st.session_state["llm"] = llm
     else:
         embeddings = OpenAIEmbeddings()
-        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+        llm = ChatOpenAI(model="gpt-4o", temperature=0)
     if password and url and user:
         st.session_state["url"] = url 
         st.session_state["password"] = password 
