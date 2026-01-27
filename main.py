@@ -21,15 +21,6 @@ from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
 from langchain_openai import OpenAIEmbeddings
 import re
 
-def get_node_properties(driver):
-    query = """
-    CALL db.schema.nodeTypeProperties()
-    YIELD nodeType, propertyName
-    RETURN nodeType AS label, collect(DISTINCT propertyName) AS properties
-    """
-    with driver.session() as session:
-        result = session.run(query)
-        return {record["label"]: record["properties"] for record in result}
 
 
 def load_pages_from_pdf(doc):
@@ -210,14 +201,14 @@ if st.session_state["screen"] == "menu":
                 schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
 
 
-                
+
         st.subheader("Ask a Question")
 
         with st.form(key='question_form'):
             question = st.text_input("Enter your question:")
             submit_button = st.form_submit_button(label='Submit')
 
-            template=ChatPromptTemplate.from_template(template=f"""
+            template=ChatPromptTemplate.from_template(template="""
                 Task: Generate a Cypher statement to query the graph database.
                 Instructions:
                 Use only relationship types and properties provided in schema.
@@ -229,7 +220,6 @@ if st.session_state["screen"] == "menu":
                 Do not include any text other than generated Cypher statements.
                 Question: {question}""")
 
-            node_prop = get_node_properties(driver=graph)
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
@@ -239,11 +229,12 @@ if st.session_state["screen"] == "menu":
             )
             
             st.session_state['qa'] = qa
-
             if submit_button and question:
                 with st.spinner("Generating answer..."):
                     with graph.session() as session:
-                        res = st.session_state['qa'].invoke({"query": question, "node_props": node_prop})
+                        res = st.session_state['qa'].invoke({
+                            "query": question,
+                        })
                         st.write("\n**Answer:**\n" + res['result'])
 
 
