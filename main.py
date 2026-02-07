@@ -1,3 +1,4 @@
+from multiprocessing import context
 from dotenv import load_dotenv
 import os
 import streamlit as st
@@ -23,8 +24,8 @@ import re
 
 
 def embed_all_entities(driver: GraphDatabase.driver):
-    LABEL = "Entity"
-    TEXT_PROP = "name"
+    LABEL = "Fact"
+    TEXT_PROP = "text"
     EMBED_PROP = "embedding"
     BATCH_SIZE = 50
     
@@ -103,7 +104,11 @@ def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.dri
             """
             MERGE (a:Entity {name: $source})
             MERGE (b:Entity {name: $target})
-            MERGE (a)-[r:RELATIONSHIP {type: $relationship}]->(b)
+            MERGE (f:Fact {
+                text: $source + " " + $relationship + " " + $target
+                })
+            MERGE (f)-[:ABOUT]->(a)
+            MERGE (f)-[:ABOUT]->(b)
             """,
             source=source,
             target=target,
@@ -224,12 +229,12 @@ if st.session_state["screen"] == "menu":
                     embedding=st.session_state["embeddings"],
                     username=st.session_state["user"],
                     password=st.session_state["password"],
-                    node_label="Entity",
+                    node_label="Fact",
                     url=st.session_state["url"],
                     database="neo4j",
-                    text_node_properties=["id", "text"], 
+                    text_node_properties=["text"], 
                     embedding_node_property="embedding", 
-                    index_name="vector", 
+                    index_name="fact_vector", 
                     search_type="vector" 
                 )
 
@@ -245,20 +250,32 @@ if st.session_state["screen"] == "menu":
             question = st.text_input("Enter your question:")
             submit_button = st.form_submit_button(label='Submit')
 
-            template=ChatPromptTemplate.from_template(template="""
-                Task: Generate a Cypher statement to query the graph database.
-                Instructions:
-                Use only relationship types and properties provided in schema.
-                Do not use other relationship types or properties that are not provided.
-                schema:
-                {schema}
-                Note: Do not include explanations or apologies in your answers.
-                Do not answer questions that ask anything other than creating Cypher statements.
-                Do not include any text other than generated Cypher statements.
-                Question: {question}""")
+            docs = index.similarity_search(question, k=5)
+            context = "\n".join(d.page_content for d in docs)
 
-            context = index.similarity_search(question)
-            print("context from vector: ", context)
+            template=ChatPromptTemplate.from_template(template=f"""
+                You are answering questions over a graph-backed knowledge base.
+
+                Context:
+                {context}
+
+                Question:
+                {question}
+
+                If the context directly answers the question, answer using ONLY the context.
+                If structured data is required, generate a Cypher query.
+
+                Respond in JSON:
+                {{
+                  "mode": "answer" | "cypher",
+                  "answer": "...",
+                  "cypher": "..."
+                }}
+                """
+            )
+
+
+            print("context from vector: ", docs)
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
@@ -266,7 +283,6 @@ if st.session_state["screen"] == "menu":
                 verbose=True,
                 allow_dangerous_requests=True
             )
-            
             st.session_state['qa'] = qa
             if submit_button and question:
                 with st.spinner("Generating answer..."):
