@@ -22,6 +22,39 @@ from langchain_openai import OpenAIEmbeddings
 import re
 
 
+def embed_all_entities(driver: GraphDatabase.driver):
+    LABEL = "Entity"
+    TEXT_PROP = "name"
+    EMBED_PROP = "embedding"
+    BATCH_SIZE = 50
+    
+    with driver.session() as session:
+        rows = session.run(f"""
+            MATCH (n:{LABEL})
+            WHERE n.{EMBED_PROP} IS NULL
+              AND n.{TEXT_PROP} IS NOT NULL
+              AND trim(n.{TEXT_PROP}) <> ""
+            RETURN elementId(n) AS eid, n.{TEXT_PROP} AS text
+        """).data()
+
+    print(f"Found {len(rows)} entities to embed")
+
+    for i in range(0, len(rows), BATCH_SIZE):
+        batch = rows[i:i+BATCH_SIZE]
+
+        texts = [r["text"] for r in batch]
+        vectors = st.session_state["embeddings"].embed_documents(texts)
+
+        with driver.session() as session:
+            for r, vec in zip(batch, vectors):
+                session.run("""
+                    MATCH (n)
+                    WHERE elementId(n) = $eid
+                    SET n.embedding = $embedding
+                """, eid=r["eid"], embedding=vec)
+
+        print(f"Embedded {i + len(batch)} / {len(rows)}")
+    
 
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
@@ -121,6 +154,7 @@ if st.session_state["screen"] == "login":
         st.session_state["llm"] = llm
     else:
         embeddings = OpenAIEmbeddings()
+        st.session_state["embeddings"] = embeddings
         llm = ChatOpenAI(model="gpt-4o", temperature=0)
     if password and url and user:
         st.session_state["url"] = url 
@@ -182,7 +216,9 @@ if st.session_state["screen"] == "menu":
                 """
                 graph_documents = documents_to_graph_elements(lc_docs, llm)
 
-                build_graph_nodes_and_relationships(graph_documents, graph)                
+                build_graph_nodes_and_relationships(graph_documents, graph) 
+
+                embed_all_entities(graph)               
 
                 index = Neo4jVector.from_existing_graph(
                     embedding=st.session_state["embeddings"],
@@ -221,9 +257,8 @@ if st.session_state["screen"] == "menu":
                 Do not include any text other than generated Cypher statements.
                 Question: {question}""")
 
-            print(index.similarity_search(question))
-
-
+            context = index.similarity_search(question)
+            print("context from vector: ", context)
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
