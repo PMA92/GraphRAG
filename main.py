@@ -263,19 +263,13 @@ if st.session_state["screen"] == "menu":
                 {question}
 
                 If the context directly answers the question, answer using ONLY the context.
-                If structured data is required, generate a Cypher query.
-
-                Respond in JSON:
-                {{
-                  "mode": "answer" | "cypher",
-                  "answer": "...",
-                  "cypher": "..."
-                }}
+                If structured data is required, generate a Cypher query. 
                 """
             )
 
 
             print("context from vector: ", docs)
+            generator = llm.invoke()
             qa = GraphCypherQAChain.from_llm(
                 llm=llm,
                 cypher_prompt=template,
@@ -287,9 +281,7 @@ if st.session_state["screen"] == "menu":
             if submit_button and question:
                 with st.spinner("Generating answer..."):
                     with graph.session() as session:
-                        res = st.session_state['qa'].invoke({
-                            "query": question,
-                        })
+                        res = st.session_state['qa'].invoke({"query": question})
                         st.write("\n**Answer:**\n" + res['result'])
 
 
