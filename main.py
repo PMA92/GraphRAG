@@ -1,4 +1,3 @@
-from multiprocessing import context
 from dotenv import load_dotenv
 import os
 import streamlit as st
@@ -253,7 +252,7 @@ if st.session_state["screen"] == "menu":
             docs = index.similarity_search(question, k=5)
             context = "\n".join(d.page_content for d in docs)
 
-            template=ChatPromptTemplate.from_template(template=f"""
+            template = ChatPromptTemplate.from_template(template=f"""
                 You are answering questions over a graph-backed knowledge base.
 
                 Context:
@@ -263,26 +262,19 @@ if st.session_state["screen"] == "menu":
                 {question}
 
                 If the context directly answers the question, answer using ONLY the context.
-                If structured data is required, generate a Cypher query. 
+                If not, let the user know that no info can be found about that in the documents. Do not attempt to use any outside knowledge,
+                and do not attempt to make up an answer if the answer is not contained in the provided context.
                 """
             )
 
-
-            print("context from vector: ", docs)
-            generator = llm.invoke()
-            qa = GraphCypherQAChain.from_llm(
-                llm=llm,
-                cypher_prompt=template,
-                graph=qaGraph,
-                verbose=True,
-                allow_dangerous_requests=True
-            )
-            st.session_state['qa'] = qa
+            chain = template | llm
+            
+            st.session_state['chain'] = chain
             if submit_button and question:
                 with st.spinner("Generating answer..."):
                     with graph.session() as session:
-                        res = st.session_state['qa'].invoke({"query": question})
-                        st.write("\n**Answer:**\n" + res['result'])
+                        out = st.session_state['chain'].invoke({"context": context, "question": question})
+                        st.write("\n**Answer:**\n" + out.content)
 
 
 
