@@ -3,8 +3,10 @@ import os
 import streamlit as st
 import tempfile
 from neo4j import GraphDatabase
+from pydantic import BaseModel
 
 import anthropic
+
 
 from langchain_community.graphs import Neo4jGraph
 
@@ -64,7 +66,6 @@ def embed_all_entities(driver: GraphDatabase.driver):
                     MATCH (n)
                     WHERE elementId(n) = $eid
                     SET n.embedding = $embedding
-                    WHERE size(n.embedding) = $dims
                 """, eid=r["eid"], embedding=vec, dims=EMBED_DIMS)
 
         print(f"Embedded {i + len(batch)} / {len(rows)}")
@@ -106,14 +107,16 @@ def answer_question(client: anthropic.Anthropic, context: str, question: str):
     Context:
     {context}
 
+
+    ONLY ANSWER THE QUESTION USING THE CONTEXT GIVEN!
+    If the context can't answer it, or give insight to the question in any way, state so.
     Question:
     {question}
     """
-    response = client.messages.parse(
+    response = client.messages.create(
         model=MODEL,
         max_tokens=16000,
         output_config={"effort": "medium"},
-        output_format=Answer,
         messages=[{"role": "user", "content": prompt}],
     )
 
