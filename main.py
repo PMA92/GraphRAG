@@ -87,7 +87,6 @@ def documents_to_graph_elements(docs, client):
     Documents:
     {docs}
     """
-    #where do we call with our prompt? and how do we pass in the docs?
     response = client.messages.parse(
         model=MODEL,
         max_tokens=16000,
@@ -102,7 +101,25 @@ def documents_to_graph_elements(docs, client):
         raise RuntimeError("Extraction got cut off - doc could be too large")
     return response.parsed_output.triples
 
+def answer_question(client: anthropic.Anthropic, context: str, question: str):
+    prompt = f"""
+    Context:
+    {context}
 
+    Question:
+    {question}
+    """
+    response = client.messages.parse(
+        model=MODEL,
+        max_tokens=16000,
+        output_config={"effort": "medium"},
+        output_format=Answer,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    if response.stop_reason == "refusal":
+        st.error("The model refused to generate a response.")
+    return "".join(b.text for b in response.content if b.type == "text")
         
 
 def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.driver):
