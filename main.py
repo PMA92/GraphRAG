@@ -84,23 +84,23 @@ def documents_to_graph_elements(docs, client):
     prompt = f"""
     Extract knowledge graph triples for each document in the list of docouemnts.
 
-    Format ONLY as a list of JSONs with this relatinoship:
-    [
-        {{"Source": "...", "Relationship": "...", "Target": "..."}},
-    ]
-
     Documents:
     {docs}
     """
-    
-    response = client.invoke(prompt)
-        
-    
-    res = response.content
-    res = re.sub(r"```json|```", "", res).strip()
-    print(res)
-    info = json.loads(res)
-    return info
+    #where do we call with our prompt? and how do we pass in the docs?
+    response = client.messages.parse(
+        model=MODEL,
+        max_tokens=16000,
+        output_config={"effort": "medium"},
+        output_format=Triples,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    if response.stop_reason == "refusal":
+        st.error("The model refused to generate a response.")
+    if response.parsed_output is None:
+        raise RuntimeError("Extraction got cut off - doc could be too large")
+    return response.parsed_output.triples
 
 
         
