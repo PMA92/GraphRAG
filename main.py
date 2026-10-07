@@ -19,6 +19,23 @@ from pypdf import PdfReader
 import re
 
 
+MODEL="claude-opus-5-5"
+#is this ollama embeddings?
+EMBED_MODEL = "all-MiniLM-L6-v2"
+
+EMBED_DIMS = 384
+#where did you pull the index name from
+INDEX_NAME = "fact_embedding_index"
+
+#what does basemodel do
+class Triple(BaseModel):
+    Source: str
+    Relationship: str
+    Target: str
+
+class Triples(BaseModel):
+    triples:list[Triple]
+
 def embed_all_entities(driver: GraphDatabase.driver):
     LABEL = "Fact"
     TEXT_PROP = "text"
@@ -28,19 +45,18 @@ def embed_all_entities(driver: GraphDatabase.driver):
     with driver.session() as session:
         rows = session.run(f"""
             MATCH (n:{LABEL})
-            WHERE n.{EMBED_PROP} IS NULL
+            WHERE (n.{EMBED_PROP} IS NULL OR size(n.{EMBED_PROP}) <> $dims)
               AND n.{TEXT_PROP} IS NOT NULL
               AND trim(n.{TEXT_PROP}) <> ""
             RETURN elementId(n) AS eid, n.{TEXT_PROP} AS text
-        """).data()
+        """, dims=EMBED_DIMS).data()
 
     print(f"Found {len(rows)} entities to embed")
 
     for i in range(0, len(rows), BATCH_SIZE):
         batch = rows[i:i+BATCH_SIZE]
 
-        texts = [r["text"] for r in batch]
-        vectors = st.session_state["embeddings"].embed_documents(texts)
+        vectors = [st.session_state["embeddings"].embed_query(r["text"]) for r in batch]
 
         with driver.session() as session:
             for r, vec in zip(batch, vectors):
@@ -48,7 +64,8 @@ def embed_all_entities(driver: GraphDatabase.driver):
                     MATCH (n)
                     WHERE elementId(n) = $eid
                     SET n.embedding = $embedding
-                """, eid=r["eid"], embedding=vec)
+                    WHERE size(n.embedding) = $dims
+                """, eid=r["eid"], embedding=vec, dims=EMBED_DIMS)
 
         print(f"Embedded {i + len(batch)} / {len(rows)}")
     
