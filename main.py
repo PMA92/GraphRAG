@@ -3,22 +3,19 @@ import os
 import streamlit as st
 import tempfile
 from neo4j import GraphDatabase
-import json
 
-from langchain_openai import ChatOpenAI
-from langchain_community.vectorstores.neo4j_vector import Neo4jVector
-from langchain_core.prompts import ChatPromptTemplate
+import anthropic
+
 from langchain_community.graphs import Neo4jGraph
 
 
 import neo4j_graphrag.schema 
-from neo4j_graphrag.experimental.components.embedder import TextChunkEmbedder
-from neo4j_graphrag.embeddings.openai import OpenAIEmbeddings
+from neo4j_graphrag.embeddings import SentenceTransformerEmbeddings
+from neo4j_graphrag.indexes import create_vector_index
+from neo4j_graphrag.retrievers import VectorRetriever
+from neo4j_graphrag.types import RetrieverResultItem
 
-from neo4j import GraphDatabase
 from pypdf import PdfReader
-from langchain_community.chains.graph_qa.cypher import GraphCypherQAChain
-from langchain_openai import OpenAIEmbeddings
 import re
 
 
