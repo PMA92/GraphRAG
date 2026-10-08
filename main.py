@@ -209,12 +209,8 @@ if st.session_state["screen"] == "login":
 if st.session_state["screen"] == "menu":
     st.title("GraphRAG")
     st.write("Here you will upload PDFs and make queries.")
-    auth=(os.getenv("NEO4J_USER"), os.getenv("NEO4J_PASS"))
-    url = os.getenv("NEO4J_URL")
-    graph = GraphDatabase.driver(
-        uri = url,
-        auth=auth
-    )
+    # Reuse the connection verified on the login screen
+    graph = st.session_state["graph"]
     llm = st.session_state["llm"]
     # Example content
     uploaded_file = st.file_uploader("Upload pdf to knowledge base here", type="pdf")
