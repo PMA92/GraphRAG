@@ -182,28 +182,26 @@ if st.session_state["screen"] == "login":
             apikey = st.text_input("Enter your API Key")
             sub = st.form_submit_button("Log In")
 
-if apikey:
-    st.session_state["llm"] = anthropic.Anthropic(api_key=apikey)
-    st.success("Anthropic API Key set successfully.")
-# Load the embedding model once per session, not on every Streamlit rerun
-if "embeddings" not in st.session_state:
-    st.session_state["embeddings"] = SentenceTransformerEmbeddings(model=EMBED_MODEL)
+    if apikey:
+        st.session_state["llm"] = anthropic.Anthropic(api_key=apikey)
+        st.success("Anthropic API Key set successfully.")
+    # Load the embedding model once per session, not on every Streamlit rerun
+    if "embeddings" not in st.session_state:
+        st.session_state["embeddings"] = SentenceTransformerEmbeddings(model=EMBED_MODEL)
     llm = st.session_state.get("llm")
-    if password and url and user:
-        st.session_state["url"] = url 
-        st.session_state["password"] = password 
-        st.session_state["user"] = user 
+    if sub and password and url and user:
+        st.session_state["url"] = url
+        st.session_state["password"] = password
+        st.session_state["user"] = user
         try:
-            auth = (user, password)
-            graph = GraphDatabase.driver(
-            uri = url,
-            auth=auth
-        )
-            if graph and llm:
+            graph = GraphDatabase.driver(uri=url, auth=(user, password))
+            graph.verify_connectivity()   # actually tests the credentials
+            if llm:
                 st.session_state["graph"] = graph
-                if sub:
-                    switch_screen("menu")
-
+                switch_screen("menu")
+                st.rerun()                # show the menu now instead of on the next click
+            else:
+                st.error("Enter your Anthropic API key.")
         except Exception as e:
             st.error(f"Invalid Neo4J Credentials, check again under error message: {e}")
 
