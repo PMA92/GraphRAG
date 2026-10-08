@@ -1,8 +1,11 @@
 from dotenv import load_dotenv
+from datetime import date
 import hashlib
 import os
 import streamlit as st
 import tempfile
+import threading
+import time
 from neo4j import GraphDatabase
 from pydantic import BaseModel
 
@@ -24,6 +27,13 @@ EMBED_MODEL = "all-MiniLM-L6-v2"
 EMBED_DIMS = 384
 INDEX_NAME = "fact_embedding_index"
 NEO4J_DATABASE = None
+
+# Usage limits, applied only when someone logs in with the default (.env) credentials
+MAX_UPLOADS_PER_SESSION = 3
+MAX_QUESTIONS_PER_SESSION = 20
+MIN_SECONDS_BETWEEN_REQUESTS = 5
+MAX_CLAUDE_CALLS_PER_DAY = 100   # shared across every session on this server
+MAX_PDF_PAGES = 20
 
 class Triple(BaseModel):
     Source: str
@@ -150,7 +160,44 @@ def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.dri
     
 
 
+@st.cache_resource
+def daily_usage():
+    # one shared object per server process, so the count spans all sessions.
+    # resets when the server restarts.
+    return {"date": None, "count": 0, "lock": threading.Lock()}
+
+
+def check_rate_limit(kind: str):
+    """Returns an error message if this request is over a limit, otherwise records it and returns None."""
+    if not st.session_state.get("using_defaults"):
+        return None
+
+    now = time.time()
+    if now - st.session_state.get("last_request", 0) < MIN_SECONDS_BETWEEN_REQUESTS:
+        return f"Please wait {MIN_SECONDS_BETWEEN_REQUESTS} seconds between requests."
+
+    limit = MAX_UPLOADS_PER_SESSION if kind == "upload" else MAX_QUESTIONS_PER_SESSION
+    count_key = f"{kind}_count"
+    if st.session_state.get(count_key, 0) >= limit:
+        return f"Limit reached: {limit} {kind}s per session."
+
+    usage = daily_usage()
+    with usage["lock"]:
+        today = date.today().isoformat()
+        if usage["date"] != today:
+            usage["date"] = today
+            usage["count"] = 0
+        if usage["count"] >= MAX_CLAUDE_CALLS_PER_DAY:
+            return "The daily usage limit for the default credentials has been reached. Try again tomorrow."
+        usage["count"] += 1
+
+    st.session_state[count_key] = st.session_state.get(count_key, 0) + 1
+    st.session_state["last_request"] = now
+    return None
+
+
 load_dotenv()
+
 st.set_page_config(
     layout="wide",
     page_title="GraphRAG",
@@ -188,9 +235,6 @@ if st.session_state["screen"] == "login":
         st.session_state["embeddings"] = SentenceTransformerEmbeddings(model=EMBED_MODEL)
     llm = st.session_state.get("llm")
     if sub and password and url and user:
-        st.session_state["url"] = url
-        st.session_state["password"] = password
-        st.session_state["user"] = user
         try:
             graph = GraphDatabase.driver(uri=url, auth=(user, password))
             graph.verify_connectivity()   # actually tests the credentials
@@ -211,14 +255,21 @@ if st.session_state["screen"] == "menu":
     llm = st.session_state["llm"]
     uploaded_file = st.file_uploader("Upload pdf to knowledge base here", type="pdf")
     if uploaded_file:
-        # Streamlit reruns this script on every click; only process a file once
         file_hash = hashlib.sha256(uploaded_file.getvalue()).hexdigest()
         if st.session_state.get("processed_file") != file_hash:
-            with st.spinner("Uploading file..."):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_file_path = tmp_file.name
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(uploaded_file.getvalue())
+                tmp_file_path = tmp_file.name
 
+            if st.session_state.get("using_defaults") and len(PdfReader(tmp_file_path).pages) > MAX_PDF_PAGES:
+                st.warning(f"PDFs are limited to {MAX_PDF_PAGES} pages on the default credentials.")
+                st.stop()
+            limit_error = check_rate_limit("upload")
+            if limit_error:
+                st.warning(limit_error)
+                st.stop()
+
+            with st.spinner("Uploading file..."):
                 lc_docs = load_pages_from_pdf(tmp_file_path)
                 graph_documents = documents_to_graph_elements(lc_docs, llm)
                 build_graph_nodes_and_relationships(graph_documents, graph)
@@ -251,7 +302,10 @@ if st.session_state["screen"] == "menu":
             question = st.text_input("Enter your question:")
             submit_button = st.form_submit_button(label='Submit')
 
-            if submit_button and question:
+            limit_error = check_rate_limit("question") if submit_button and question else None
+            if limit_error:
+                st.warning(limit_error)
+            elif submit_button and question:
                 with st.spinner("Generating answer..."):
                     results = retriever.search(query_text=question, top_k=5)
                     context = "\n".join(item.content for item in results.items)
