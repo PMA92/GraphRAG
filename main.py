@@ -69,7 +69,9 @@ def embed_all_entities(driver: GraphDatabase.driver):
                 """, eid=r["eid"], embedding=vec, dims=EMBED_DIMS)
 
         print(f"Embedded {i + len(batch)} / {len(rows)}")
-    
+
+def fact_formatter(record):
+    return RetrieverResultItem(content=record["node"]["text"], metadata={"score": record["score"]})
 
 def load_pages_from_pdf(doc):
     loader = PdfReader(doc)
@@ -122,17 +124,19 @@ def answer_question(client: anthropic.Anthropic, context: str, question: str):
 
     if response.stop_reason == "refusal":
         st.error("The model refused to generate a response.")
+        return[]
     return "".join(b.text for b in response.content if b.type == "text")
         
 
 def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.driver):
+    graph.verify_connectivity()
+
     for item in relation_input:
-        source = item["Source"]
-        relationship = item["Relationship"]
-        target = item["Target"]
+        source = item.Source
+        relationship = item.Relationship
+        target = item.Target
 
 
-        graph.verify_connectivity()
         graph.execute_query(
             """
             MERGE (a:Entity {name: $source})
