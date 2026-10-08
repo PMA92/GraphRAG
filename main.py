@@ -7,10 +7,6 @@ from pydantic import BaseModel
 
 import anthropic
 
-
-from langchain_community.graphs import Neo4jGraph
-
-
 import neo4j_graphrag.schema 
 from neo4j_graphrag.embeddings import SentenceTransformerEmbeddings
 from neo4j_graphrag.indexes import create_vector_index
@@ -182,22 +178,17 @@ if st.session_state["screen"] == "login":
             url = st.text_input("Neo4J Url")
             user = st.text_input("Neo4J Username")
             password = st.text_input("Neo4J Password")
-            llm = st.selectbox("Pick An LLM", ["OpenAI"]) #add ollama in the future for local reading
+            llm = st.selectbox("Pick An LLM", ["Claude"]) #add ollama in the future for local reading
             apikey = st.text_input("Enter your API Key")
             sub = st.form_submit_button("Log In")
 
-    if 'OPENAI_AI_API_KEY' not in st.session_state and apikey != "":
-        os.environ['OPENAI_API_KEY'] = apikey
-        st.session_state['OPENAI_API_KEY'] = apikey
-        st.success("OpenAI API Key set successfully.")
-        embeddings = OpenAIEmbeddings()
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
-        st.session_state["embeddings"] = embeddings
-        st.session_state["llm"] = llm
-    else:
-        embeddings = OpenAIEmbeddings()
-        st.session_state["embeddings"] = embeddings
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+if apikey:
+    st.session_state["llm"] = anthropic.Anthropic(api_key=apikey)
+    st.success("Anthropic API Key set successfully.")
+# Load the embedding model once per session, not on every Streamlit rerun
+if "embeddings" not in st.session_state:
+    st.session_state["embeddings"] = SentenceTransformerEmbeddings(model=EMBED_MODEL)
+    llm = st.session_state.get("llm")
     if password and url and user:
         st.session_state["url"] = url 
         st.session_state["password"] = password 
@@ -208,15 +199,7 @@ if st.session_state["screen"] == "login":
             uri = url,
             auth=auth
         )
-            qaGraph = Neo4jGraph(
-                url=url,
-                username=user,
-                password=password,
-                database="neo4j"     
-            )
-
             if graph and llm:
-                st.session_state["llm"] = llm
                 st.session_state["graph"] = graph
                 if sub:
                     switch_screen("menu")
@@ -233,12 +216,6 @@ if st.session_state["screen"] == "menu":
     graph = GraphDatabase.driver(
         uri = url,
         auth=auth
-    )
-    qaGraph = Neo4jGraph(
-                url=url,
-                username=st.session_state["user"],
-                password=st.session_state["password"],
-                database="neo4j"     
     )
     llm = st.session_state["llm"]
     # Example content
@@ -261,21 +238,23 @@ if st.session_state["screen"] == "menu":
                 build_graph_nodes_and_relationships(graph_documents, graph) 
 
                 embed_all_entities(graph)               
-
-                index = Neo4jVector.from_existing_graph(
-                    embedding=st.session_state["embeddings"],
-                    username=st.session_state["user"],
-                    password=st.session_state["password"],
-                    node_label="Fact",
-                    url=st.session_state["url"],
-                    database="neo4j",
-                    text_node_properties=["text"], 
-                    embedding_node_property="embedding", 
-                    index_name="fact_vector", 
-                    search_type="vector" 
+                create_vector_index(
+                    graph,
+                    INDEX_NAME,
+                    label="Fact",
+                    embedding_property="embedding",
+                    dimensions=EMBED_DIMS,
+                    similarity_fn="cosine",
+                    neo4j_database="neo4j",
                 )
-
-
+                retriever = VectorRetriever(
+                    graph,
+                    index_name=INDEX_NAME,
+                    embedder=st.session_state["embeddings"],
+                    return_properties=["text"],
+                    result_formatter=fact_formatter,
+                    neo4j_database="neo4j",
+                )
                 st.success("Uploaded file")
                 schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
 
