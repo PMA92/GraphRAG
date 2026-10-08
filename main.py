@@ -18,14 +18,12 @@ import re
 
 
 MODEL="claude-opus-5-5"
-#is this ollama embeddings?
 EMBED_MODEL = "all-MiniLM-L6-v2"
 
 EMBED_DIMS = 384
-#where did you pull the index name from
 INDEX_NAME = "fact_embedding_index"
+NEO4J_DATABASE = None
 
-#what does basemodel do
 class Triple(BaseModel):
     Source: str
     Relationship: str
@@ -146,7 +144,7 @@ def build_graph_nodes_and_relationships(relation_input, graph: GraphDatabase.dri
             source=source,
             target=target,
             relationship=relationship,
-            database = "neo4j"
+            database_=NEO4J_DATABASE
         )
     
 
@@ -185,7 +183,6 @@ if st.session_state["screen"] == "login":
     if apikey:
         st.session_state["llm"] = anthropic.Anthropic(api_key=apikey)
         st.success("Anthropic API Key set successfully.")
-    # Load the embedding model once per session, not on every Streamlit rerun
     if "embeddings" not in st.session_state:
         st.session_state["embeddings"] = SentenceTransformerEmbeddings(model=EMBED_MODEL)
     llm = st.session_state.get("llm")
@@ -209,10 +206,8 @@ if st.session_state["screen"] == "login":
 if st.session_state["screen"] == "menu":
     st.title("GraphRAG")
     st.write("Here you will upload PDFs and make queries.")
-    # Reuse the connection verified on the login screen
     graph = st.session_state["graph"]
     llm = st.session_state["llm"]
-    # Example content
     uploaded_file = st.file_uploader("Upload pdf to knowledge base here", type="pdf")
     if uploaded_file:
         with st.spinner("Uploading file..."):
@@ -222,7 +217,6 @@ if st.session_state["screen"] == "menu":
 
                 lc_docs = load_pages_from_pdf(tmp_file_path)
 
-                # Clear the graph database
                 cypher = """
                   MATCH (n)
                   DETACH DELETE n;
@@ -239,7 +233,7 @@ if st.session_state["screen"] == "menu":
                     embedding_property="embedding",
                     dimensions=EMBED_DIMS,
                     similarity_fn="cosine",
-                    neo4j_database="neo4j",
+                    neo4j_database=NEO4J_DATABASE,
                 )
                 retriever = VectorRetriever(
                     graph,
@@ -247,7 +241,7 @@ if st.session_state["screen"] == "menu":
                     embedder=st.session_state["embeddings"],
                     return_properties=["text"],
                     result_formatter=fact_formatter,
-                    neo4j_database="neo4j",
+                    neo4j_database=NEO4J_DATABASE,
                 )
                 st.success("Uploaded file")
                 schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
