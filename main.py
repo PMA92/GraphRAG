@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+import hashlib
 import os
 import streamlit as st
 import tempfile
@@ -210,22 +211,18 @@ if st.session_state["screen"] == "menu":
     llm = st.session_state["llm"]
     uploaded_file = st.file_uploader("Upload pdf to knowledge base here", type="pdf")
     if uploaded_file:
-        with st.spinner("Uploading file..."):
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(uploaded_file.read())
-                tmp_file_path = tmp_file.name
+        # Streamlit reruns this script on every click; only process a file once
+        file_hash = hashlib.sha256(uploaded_file.getvalue()).hexdigest()
+        if st.session_state.get("processed_file") != file_hash:
+            with st.spinner("Uploading file..."):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                    tmp_file.write(uploaded_file.getvalue())
+                    tmp_file_path = tmp_file.name
 
                 lc_docs = load_pages_from_pdf(tmp_file_path)
-
-                cypher = """
-                  MATCH (n)
-                  DETACH DELETE n;
-                """
                 graph_documents = documents_to_graph_elements(lc_docs, llm)
-
-                build_graph_nodes_and_relationships(graph_documents, graph) 
-
-                embed_all_entities(graph)               
+                build_graph_nodes_and_relationships(graph_documents, graph)
+                embed_all_entities(graph)
                 create_vector_index(
                     graph,
                     INDEX_NAME,
@@ -235,7 +232,7 @@ if st.session_state["screen"] == "menu":
                     similarity_fn="cosine",
                     neo4j_database=NEO4J_DATABASE,
                 )
-                retriever = VectorRetriever(
+                st.session_state["retriever"] = VectorRetriever(
                     graph,
                     index_name=INDEX_NAME,
                     embedder=st.session_state["embeddings"],
@@ -243,10 +240,10 @@ if st.session_state["screen"] == "menu":
                     result_formatter=fact_formatter,
                     neo4j_database=NEO4J_DATABASE,
                 )
-                st.success("Uploaded file")
-                schema = neo4j_graphrag.schema.get_structured_schema(driver=graph)
+                st.session_state["processed_file"] = file_hash
+            st.success("Uploaded file")
 
-
+        retriever = st.session_state["retriever"]
 
         st.subheader("Ask a Question")
 
