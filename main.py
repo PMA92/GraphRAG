@@ -266,46 +266,9 @@ if st.session_state["screen"] == "menu":
             question = st.text_input("Enter your question:")
             submit_button = st.form_submit_button(label='Submit')
 
-            docs = index.similarity_search(question, k=5)
-            context = "\n".join(d.page_content for d in docs)
-
-            template = ChatPromptTemplate.from_template(template=f"""
-                You are answering questions over a graph-backed knowledge base.
-
-                Context:
-                {context}
-
-                Question:
-                {question}
-
-                If the context directly answers the question, answer using ONLY the context.
-                If not, let the user know that no info can be found about that in the documents. Do not attempt to use any outside knowledge,
-                and do not attempt to make up an answer if the answer is not contained in the provided context.
-                """
-            )
-
-            chain = template | llm
-            
-            st.session_state['chain'] = chain
             if submit_button and question:
                 with st.spinner("Generating answer..."):
-                    with graph.session() as session:
-                        out = st.session_state['chain'].invoke({"context": context, "question": question})
-                        st.write("\n**Answer:**\n" + out.content)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+                    results = retriever.search(query_text=question, top_k=5)
+                    context = "\n".join(item.content for item in results.items)
+                    out = answer_question(llm, context, question)
+                    st.write("\n**Answer:**\n" + out)
